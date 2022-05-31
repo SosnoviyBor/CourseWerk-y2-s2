@@ -1,0 +1,3 @@
+1.0 - raw dataframe
+1.1 - normalized, based and redpilled
+1.1 nof - same as previous, but without firms
