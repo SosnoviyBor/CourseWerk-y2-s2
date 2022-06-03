@@ -1,27 +1,32 @@
-from logging import exception
 import pickle
 import pandas as pd
 import openpyxl as excel
+import os
 
 from sklearn.preprocessing import PolynomialFeatures, StandardScaler
 from sklearn.linear_model import LinearRegression
 from sklearn.pipeline import Pipeline
 
-def __create_dummies (data:dict, cell:str, dummies:list) -> dict:
-	if cell in data.keys():
-		flag = False
-		for dummie in dummies:
-			if data[cell].lower() == f"{dummie}".lower():
-				data.update({f"{dummie}":1})
-				flag = True
-			else: 
-				data.update({f"{dummie}":0})
-		if not flag:
-			exception(f"This {dummie} is not supported currently. Or you misspelled it")
-		data.pop(cell)
-		return data
-	else:
-		exception(f"Bro, you forgor {cell}")
+def __create_dummies (data:dict, key:str, dummies:list) -> dict:
+	"""
+	data = dictionary to pump
+	key = key, which value is to be transformed
+	dummies = list of dummy keys to create
+	"""
+	modified = False
+	# dummy duplication machine!
+	for dummie in dummies:
+		if data[key].lower() == f"{dummie}".lower():
+			data.update({f"{dummie}":1})
+			modified = True
+		else: 
+			data.update({f"{dummie}":0})
+	# data wasn't modified
+	if not modified:
+		raise ValueError(f"This {dummie} is not supported currently. Or you misspelled it")
+	# drop the excess key
+	data.pop(key)
+	return data
 
 def predict(data:dict|pd.Series, model_name:str, to_excel:bool=False) -> list|pd.Series:
 	"""
@@ -60,7 +65,7 @@ def predict(data:dict|pd.Series, model_name:str, to_excel:bool=False) -> list|pd
 	else:
 		df = data.drop("price", axis=1)
 
-	# get needed or predetermined model
+	# get the model
 	with open(f"models/{model_name}", "rb") as file:
 		model = pickle.load(file)
 		# do magic bullshittery
@@ -68,6 +73,8 @@ def predict(data:dict|pd.Series, model_name:str, to_excel:bool=False) -> list|pd
 		# format result to same format
 		result = []
 		for cost in rawResult:
+			# multi returns array but poly returns arrya of arrays of 1 value
+			# WTFFFFFF
 			if type(cost) == type("<class 'numpy.ndarray'>"):
 				cost = cost[0]
 			if cost < 0:
@@ -75,9 +82,7 @@ def predict(data:dict|pd.Series, model_name:str, to_excel:bool=False) -> list|pd
 			cost = int(cost)
 			result.append(cost)
 
-		if not to_excel:
-			return result
-		else:
+		if to_excel:
 			# write result to excel file
 			wb = excel.load_workbook("test results.xlsx")
 			ws = wb.create_sheet(model_name)
@@ -91,6 +96,7 @@ def predict(data:dict|pd.Series, model_name:str, to_excel:bool=False) -> list|pd
 				actual = int(data.iloc[i]["price"])
 				predicted = int(result[i])
 				
+				# no clue how this thing comes up with bazillions but ok
 				if predicted < 10000000:
 					ws[f"A{i+3}"] = actual
 					ws[f"B{i+3}"] = predicted
@@ -98,50 +104,60 @@ def predict(data:dict|pd.Series, model_name:str, to_excel:bool=False) -> list|pd
 					ws[f"D{i+3}"] = f"=(C{i+3}/A{i+3}*100)"
 				else: ws[f"A{i+3}"] = "DELETE THIS ROW"
 			
+			# writing cool statistics stuff
 			ws["F2"] = "Avg diff%"
 			ws["F3"] = f"=AVERAGE(D3:D{3+len(result)})"
-			ws["G2"] = "Max diff%"
-			ws["G3"] = f"=MAX(D3:D{3+len(result)})"
-			ws["H2"] = "Min diff%"
-			ws["H3"] = f"=MIN(D3:D{3+len(result)})"
-			ws["I2"] = "Avg diff"
-			ws["I3"] = f"=AVERAGE(C3:C{3+len(result)})"
+			ws["G2"] = "MSE"
+			ws["G3"] = f"=SQRT(SUMSQ(C3:C{3+len(result)})/COUNT(C3:C{3+len(result)}))"
 			
 			wb.save(filename="test results.xlsx")
 			print(f"Model {model_name} finished calculating!")
 			return
+		else:
+			return result
 
-def train(df:pd.Series, regression:str, length:int, degree:str|int=""):
+def train(df:pd.Series, regression:str, length:int, save:bool, degree:str|int="",):
 	df = df.copy(deep=True)
 	trainingData = df.drop("price", axis=1)
 	
 	match regression:
 		case "multi":
+			# le small math
 			pipa = LinearRegression.fit(LinearRegression(),X=trainingData[:length], y=df["price"][:length])
 			
-			filepath = f"models/{length} {regression}"
-			if "bmw" not in trainingData.columns:
-				filepath += " nof"
-			with open(filepath, "wb") as file:
-				pickle.dump(pipa, file)
+			# saving model for future usage or returning for whatever reason
+			if save:
+				filepath = f"models/{length} {regression}"
+				if "bmw" not in trainingData.columns:
+					filepath += " nof"
+				with open(filepath, "wb") as file:
+					pickle.dump(pipa, file)
+			else:
+				return pipa
 		case "poly":
+			# le big math
 			blueprint = [('scale',StandardScaler()),('polynomial',PolynomialFeatures(degree=degree)),('mode',LinearRegression())]
 			pipa = Pipeline(blueprint)
 			pipa.fit(trainingData[:length], df[["price"]][:length])
 			
-			filepath = f"models/{length} {regression} {degree}"
-			if "bmw" not in trainingData.columns:
-				filepath += " nof"
-			with open(filepath, "wb") as file:
-				pickle.dump(pipa, file)
+			# saving model for future usage or returning for whatever reason
+			if save:
+				filepath = f"models/{length} {regression} {degree}"
+				if "bmw" not in trainingData.columns:
+					filepath += " nof"
+				with open(filepath, "wb") as file:
+					pickle.dump(pipa, file)
+			else:
+				return pipa
 		case _:
-			exception("Expected regression to be 'multi' or 'poly'")
+			raise ValueError("Expected regression to be 'multi' or 'poly'")
 	
+	# its literally the first time i actually used ternary operator seriously
 	is_nof = "" if "bmw" in df.columns else " nof"
 	print(f"Model '{length} {regression} {degree}{is_nof}' successfully trained!")
 	return
 
-def train_and_predict (instructions:list, regression:str, do_tests:bool, to_excel:bool=False):
+def train_and_predict (instructions:list, regression:str, save_model:bool, do_tests:bool, to_excel:bool=False):
 	"""
 	instructions = [
 		[dataframe, length, degree (if regression == "poly")],\n
@@ -151,19 +167,31 @@ def train_and_predict (instructions:list, regression:str, do_tests:bool, to_exce
 	match regression:
 		case "multi":
 			for args in instructions:
+				# check for firms
 				if not "bmw" in args[0].columns:
-					filepath = f"{args[1]} multi nof"
+					filename = f"{args[1]} multi nof"
 				else:
-					filepath = f"{args[1]} multi"
-				train(args[0][:args[1]], "multi", args[1])
+					filename = f"{args[1]} multi"
+				
+				# check if this model is aleady available
+				if not os.path.exists(f"models/{filename}"):
+					train(args[0][:args[1]], "multi", args[1], save_model)
+				
+				# maybe you wanted only to train your models?
 				if do_tests:
-					return predict(args[0][args[1]:], filepath, to_excel)
+					return predict(args[0][args[1]:], filename, to_excel)
 		case "poly":
 			for args in instructions:
+				# check for firms
 				if not "bmw" in args[0].columns:
-					filepath = f"{args[1]} poly {args[2]} nof"
+					filename = f"{args[1]} poly {args[2]} nof"
 				else:
-					filepath = f"{args[1]} poly {args[2]}"
-				train(args[0][:args[1]], "poly", args[1], degree=args[2])
+					filename = f"{args[1]} poly {args[2]}"
+				
+				# check if this model is aleady available
+				if not os.path.exists(f"models/{filename}"):
+					train(args[0][:args[1]], "poly", args[1], save_model, degree=args[2])
+				
+				# maybe you wanted only to train your models?
 				if do_tests:
-					return predict(args[0][args[1]:], filepath, to_excel)
+					return predict(args[0][args[1]:], filename, to_excel)

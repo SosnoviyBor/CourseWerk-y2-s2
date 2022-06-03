@@ -18,25 +18,26 @@ inputData = {
 # THERE IS 99187 ENTRIES IN v1.1 DATAFRAME
 # 75k is approximately 3/4
 
-#predictor.train(df1, "poly", 75000, 4)
+#tools.heatmapHelper(df1)
+#predictor.train(df1, "poly", 75000, 3)
 #predictor.predict(df1, "75000 poly 3", True)
 
-# bulk poly training + prediction
+# bulk things
 """
 tmp = [
-	[df1, 75000, 4],
-	[df1, 75000, 5],
-	[df2, 75000, 4],
-	[df2, 75000, 5],
+	[df1, 75000, 1],
+	[df1, 75000, 2],
+	[df1, 75000, 3],
+	[df2, 75000, 1],
+	[df2, 75000, 2],
+	[df2, 75000, 3],
 ]
-predictor.train_and_predict(tmp,"poly",True,True)
-"""
-# bulk multi training + prediction
-"""
+predictor.train_and_predict(tmp,"poly",True,True,False)
+
 tmp = [
 	[df1, 75000],
 	[df2, 75000],
 ]
-predictor.train_and_predict(tmp,"multi",True,True)
+predictor.train_and_predict(tmp,"multi",True,True,False)
 """
 print("done!")
